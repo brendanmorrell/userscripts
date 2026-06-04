@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Hide GitHub Copilot Comments
 // @namespace    https://github.com/brendanmorrell/userscripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Hides GitHub Copilot bot review comments on PRs. Purple button (bottom-right) to toggle.
 // @author       brendanmorrell
 // @match        https://github.com/*/*/pull/*
@@ -38,7 +38,15 @@
 
   function getCopilotContainers() {
     const containers = new Set();
-    document.querySelectorAll('a.author, a[data-hovercard-type="user"]').forEach(a => {
+    // Cast a wide net: user, bot, or app hrefs containing "copilot"
+    const sel = [
+      'a.author',
+      'a[data-hovercard-type="user"]',
+      'a[data-hovercard-type="bot"]',
+      'a[href*="/copilot"]',
+      'a[href*="/apps/copilot"]',
+    ].join(', ');
+    document.querySelectorAll(sel).forEach(a => {
       if (!/copilot/i.test(a.href) && !/copilot/i.test(a.textContent.trim())) return;
       const c = findContainer(a);
       if (c) containers.add(c);

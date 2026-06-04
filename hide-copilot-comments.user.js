@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Hide GitHub Copilot Comments
 // @namespace    https://github.com/brendanmorrell/userscripts
-// @version      1.1.0
+// @version      2.0.0
 // @description  Hides GitHub Copilot bot review comments on PRs. Purple button (bottom-right) to toggle.
 // @author       brendanmorrell
 // @match        https://github.com/*/*/pull/*
@@ -16,48 +16,23 @@
   const STORAGE_KEY = 'copilot_comments_hidden';
   let hidden = GM_getValue(STORAGE_KEY, true);
 
-  // Find the outermost timeline container that owns a given author link
-  function findContainer(authorLink) {
-    let node = authorLink.parentElement;
-    let candidate = null;
-    while (node && node !== document.body) {
-      if (node.matches(
-        '.js-timeline-item, .TimelineItem, ' +
-        '.js-comment-container, ' +
-        '.js-resolvable-timeline-thread-container, ' +
-        '.pull-request-review-thread'
-      )) {
-        candidate = node;
-        // .js-timeline-item / .TimelineItem are the outermost we want
-        if (node.matches('.js-timeline-item, .TimelineItem')) break;
-      }
-      node = node.parentElement;
-    }
-    return candidate;
-  }
+  // CSS :has() approach — no DOM manipulation of comments, no observer loop possible.
+  // The browser applies/removes these rules instantly as content loads dynamically.
+  const styleEl = document.createElement('style');
+  styleEl.id = 'copilot-hider-style';
 
-  function getCopilotContainers() {
-    const containers = new Set();
-    // Cast a wide net: user, bot, or app hrefs containing "copilot"
-    const sel = [
-      'a.author',
-      'a[data-hovercard-type="user"]',
-      'a[data-hovercard-type="bot"]',
-      'a[href*="/copilot"]',
-      'a[href*="/apps/copilot"]',
-    ].join(', ');
-    document.querySelectorAll(sel).forEach(a => {
-      if (!/copilot/i.test(a.href) && !/copilot/i.test(a.textContent.trim())) return;
-      const c = findContainer(a);
-      if (c) containers.add(c);
-    });
-    return [...containers];
-  }
+  const HIDE_CSS = `
+    .TimelineItem:has(a[data-hovercard-type="copilot"]),
+    .js-timeline-item:has(a[data-hovercard-type="copilot"]),
+    .js-comment-container:has(a[data-hovercard-type="copilot"]),
+    .js-resolvable-timeline-thread-container:has(a[data-hovercard-type="copilot"]),
+    .pull-request-review-thread:has(a[data-hovercard-type="copilot"]) {
+      display: none !important;
+    }
+  `;
 
   function applyState() {
-    getCopilotContainers().forEach(el => {
-      el.style.display = hidden ? 'none' : '';
-    });
+    styleEl.textContent = hidden ? HIDE_CSS : '';
     updateButton();
   }
 
@@ -81,6 +56,7 @@
   }
 
   function createButton() {
+    if (document.getElementById('copilot-toggle-btn')) return;
     btn = document.createElement('button');
     btn.id = 'copilot-toggle-btn';
     Object.assign(btn.style, {
@@ -110,18 +86,14 @@
     updateButton();
   }
 
-  // Re-apply on dynamic content (GitHub loads PR timeline lazily)
-  let timer = null;
-  const observer = new MutationObserver(() => {
-    clearTimeout(timer);
-    timer = setTimeout(applyState, 150);
-  });
-
   function init() {
-    if (!document.body) { setTimeout(init, 50); return; }
-    createButton();
+    (document.head || document.documentElement).appendChild(styleEl);
     applyState();
-    observer.observe(document.body, { childList: true, subtree: true });
+    if (document.body) {
+      createButton();
+    } else {
+      document.addEventListener('DOMContentLoaded', createButton);
+    }
   }
 
   init();

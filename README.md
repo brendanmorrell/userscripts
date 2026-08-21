@@ -116,7 +116,7 @@ Tampermonkey re-checks this repo on its own schedule and pulls new versions auto
 
 ## Hide Copilot Comments
 
-Also in this repo: [`hide-copilot-comments.user.js`](hide-copilot-comments.user.js). Same setup, same install flow — click [install](https://raw.githubusercontent.com/brendanmorrell/userscripts/main/hide-copilot-comments.user.js) once Tampermonkey is set up. Adds a purple toggle in the bottom-right of any PR that hides Copilot's review comments. On by default. Unlike the script above, this one does not auto-update.
+Also in this repo: [`hide-copilot-comments.user.js`](hide-copilot-comments.user.js). Same setup, same install flow — click [install](https://raw.githubusercontent.com/brendanmorrell/userscripts/main/hide-copilot-comments.user.js) once Tampermonkey is set up. Adds a purple toggle in the bottom-right of any PR that hides Copilot's review comments. On by default, and it auto-updates from this repo the same way.
 
 ---
 

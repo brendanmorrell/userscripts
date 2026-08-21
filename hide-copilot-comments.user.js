@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         Hide GitHub Copilot Comments
 // @namespace    https://github.com/brendanmorrell/userscripts
-// @version      2.0.0
+// @version      2.0.1
 // @description  Hides GitHub Copilot bot review comments on PRs. Purple button (bottom-right) to toggle.
 // @author       brendanmorrell
 // @match        https://github.com/*/*/pull/*
 // @icon         data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='32' fill='%237c3aed'/><line x1='18' y1='18' x2='46' y2='46' stroke='white' stroke-width='6' stroke-linecap='round'/><line x1='46' y1='18' x2='18' y2='46' stroke='white' stroke-width='6' stroke-linecap='round'/></svg>
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @updateURL    https://raw.githubusercontent.com/brendanmorrell/userscripts/main/hide-copilot-comments.user.js
+// @downloadURL  https://raw.githubusercontent.com/brendanmorrell/userscripts/main/hide-copilot-comments.user.js
 // ==/UserScript==
 
 (function () {

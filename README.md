@@ -13,7 +13,7 @@ Small browser scripts that remove busywork from reviewing pull requests on GitHu
 
 Open a PR with 40 changed files, 22 of them `.test.ts`, and the diff you care about is buried. GitHub has a per-file **Viewed** checkbox that collapses a file, but you have to click all 22 by hand, on every PR.
 
-This script does it for you. Turn it on once and every PR you open from then on has its test files already collapsed — `__tests__/` directories, `*.test.*`, and `*.spec.*`. Your scroll position doesn't move while it works, and nothing is hidden: a collapsed file is still one click away, and it's marked viewed on GitHub's side, exactly as if you'd clicked it yourself.
+This script does it for you. Turn it on once and every PR you open from then on has its test files already collapsed — `__tests__/` directories, `*.test.*`, `*.spec.*`, .NET `*.Tests/` projects, `*_test.go`, `test_*.py`, and the rest of the conventions listed [below](#what-counts-as-a-test-file). Your scroll position doesn't move while it works, and nothing is hidden: a collapsed file is still one click away, and it's marked viewed on GitHub's side, exactly as if you'd clicked it yourself.
 
 **[▶ Click here to install](https://raw.githubusercontent.com/brendanmorrell/userscripts/main/mark-test-files-viewed.user.js)** — but do the two setup steps below first, or that link will just show you a wall of code.
 
@@ -87,13 +87,45 @@ Turning it **off never un-views anything** — it just stops. Un-collapse a file
 
 ### What counts as a test file
 
-Three patterns, matched against the file's path:
+The path is split on `/`. If **any directory** in it looks like a test directory, or the **filename** looks like a test file, the file is collapsed.
 
-- a `__tests__/`, `__test__/`, `test/`, or `tests/` directory anywhere in the path
-- `.test.` in the filename — `Button.test.tsx`
-- `.spec.` in the filename — `login.spec.ts`
+**Test directories** — any segment matching:
 
-Want more — snapshots, fixtures, mocks? Add a regex to `TEST_PATTERNS` near the top of the script. Best done as a PR here so everyone gets it; a local edit in the Tampermonkey editor works too but gets overwritten the next time the script auto-updates.
+| Rule | Matches |
+| --- | --- |
+| Dunder dirs | `__tests__/`, `__mocks__/`, `__snapshots__/`, `__fixtures__/`, `__stubs__/` |
+| Whole-word dirs | `test/`, `tests/`, `testing/`, `e2e/`, `cypress/`, `playwright/`, `mocks/`, `fixtures/`, `stubs/`, `test-data/` |
+| Suffixed dirs | `integration-tests/`, `api_tests/`, `unit.specs/` |
+| Test helper dirs | `test-utils/`, `spec_helpers/`, `test.fixtures/` |
+| .NET / JVM projects | `Pwrdby.QuickMD.Database.Tests/`, `QuickMDTests/`, `Pwrdby.QuickMD.TestInfrastructure/` |
+
+**Test files** — the filename matching:
+
+| Rule | Matches |
+| --- | --- |
+| Dotted infix | `Button.test.tsx`, `login.spec.ts`, `checkout.e2e.ts`, `app.e2e-spec.ts`, `nav.cy.js`, `api.integration.ts` |
+| Dash / underscore suffix | `handler_test.go`, `widget-test.dart`, `user_spec.rb` |
+| pytest | `test_booking.py`, `conftest.py` |
+| Bare | `test.ts`, `spec.rb` |
+| CamelCase suffix | `TreatmentCenterRepoTests.cs`, `LoginSpec.java`, `AuthTestCase.kt`, `PaymentTestSuite.swift` |
+| JUnit / Failsafe integration | `BookingFlowIT.java` |
+| Artifacts | `Button.test.tsx.snap`, `checkout.feature` |
+| Runner setup | `jest.setup.js`, `vitest.setup.tsx`, `setupTests.ts`, `test-setup.ts` |
+
+Every filename rule is anchored to a source-code extension allowlist, and CamelCase `Tests`/`Spec` is matched **case-sensitively** on compiled-language extensions only. That's what keeps `Latest.cs`, `Greatest.java`, `Manifest.kt`, `IntakeFormTemplateStorage.cs`, and `hasSpecialChar.ts` out of the sweep.
+
+**Deliberately not matched:**
+
+- **Runner config** — `vitest.config.ts`, `jest.config.js`, `playwright.config.ts`, `test.runsettings`. Changing what runs deserves your eyes; changing a setup file mostly doesn't.
+- **Written specs** — `specs/GRAFANA_SPEC.md`, `api-runbooks/specs/signup.md`. These are documents, not tests.
+- **`.sql`, `.json`, `.yml`, `.tf`** — a migration named `..._create_regression_tests.sql`, `appsettings.Autotest.json`, and CI workflow files are all real changes you need to read.
+- **Product code that says "test"** — `test-plans/generate/page.tsx`, `CrashTestButtons.tsx`, `spec-matcher.ts`.
+
+Validated against 12,163 tracked file paths across 16 QuickMD repos: 1,043 matched, zero false positives.
+
+**Known edge case:** a medical-domain directory like `drug-test/` or `LabTests/` would be collapsed, because the rules can't tell it from a test project. No such path exists in any repo today. If one appears, exclude it in `TEST_DIR_PATTERNS`.
+
+Want to change the rules? They live in the `// BEGIN-MATCHER` … `// END-MATCHER` block near the top of the script — `TEST_DIR_PATTERNS`, `TEST_FILE_PATTERNS`, and the `CODE_EXT` / `CAMEL_EXT` extension allowlists. `npm test` runs them against the real match/no-match corpus, so add your case there first. Best done as a PR here so everyone gets it; a local edit in the Tampermonkey editor works too but gets overwritten the next time the script auto-updates.
 
 ### Updates
 
@@ -109,7 +141,8 @@ Tampermonkey re-checks this repo on its own schedule and pulls new versions auto
 | Button is there, clicking does nothing | Chrome without the **Allow User Scripts** toggle — see [Step 2](#step-2--chrome-and-edge-only-allow-user-scripts). |
 | Script installed but the page looks untouched | Hard-refresh the PR. Tampermonkey only injects on a real page load, and GitHub's tab switches aren't one. |
 | A few test files stayed expanded | Some diffs refuse the click; the script retries twice, then leaves that file alone rather than looping forever. Open DevTools console and look for `[mark-test-files-viewed]` — it logs what it marked and what it gave up on. Marking those by hand is safe. |
-| It didn't catch a test file | Its path doesn't match the three patterns above. |
+| It didn't catch a test file | Its path doesn't match any rule [above](#what-counts-as-a-test-file). Open an issue with the path — that's a rule worth adding. |
+| It collapsed something that isn't a test | Check the [deliberately not matched](#what-counts-as-a-test-file) list first. If it's genuinely wrong, open an issue with the path; nothing is hidden, so unchecking **Viewed** restores it. |
 | Very large PR takes a few seconds | Expected. Files are marked one at a time — clicking them all at once loses most of the clicks, because GitHub re-renders the list between clicks. |
 
 ---
@@ -128,4 +161,4 @@ npm test
 
 Node's built-in test runner. Checks that each userscript compiles, is a strict-mode IIFE, has a well-formed `==UserScript==` block, keeps `@updateURL`/`@downloadURL` in agreement, and has an `@grant` for every `GM_*` function it calls — the failure modes Tampermonkey swallows silently.
 
-The test files also double as fixtures: `mark-test-files-viewed.test.js`, `metadata.spec.js`, and `__tests__/parses.js` are named to exercise all three of the script's match patterns, so opening a PR against this repo is itself a live test of the sweep.
+The test files also double as fixtures: `mark-test-files-viewed.test.js`, `metadata.spec.js`, and `__tests__/parses.js` are named to exercise the script's match rules, so opening a PR against this repo is itself a live test of the sweep.

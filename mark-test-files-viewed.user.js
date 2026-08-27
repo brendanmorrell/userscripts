@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Mark Test Files Viewed on GitHub PRs
 // @namespace    https://github.com/brendanmorrell/userscripts
-// @version      1.0.0
-// @description  One button on a PR's "Files changed" tab that marks every test file as viewed (collapsing it) without moving your scroll position. Toggle it on and it keeps doing it on every PR you open.
+// @version      1.1.0
+// @description  One button on a PR's "Files changed" tab that marks every test file as viewed (collapsing it) without moving your scroll position. Knows the test conventions of JS/TS, .NET, Java, Go, Python, Ruby, Swift and Dart. Toggle it on and it keeps doing it on every PR you open.
 // @author       brendanmorrell
 // @match        https://github.com/*/*/pull/*
 // @icon         data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='32' fill='%231f883d'/><polyline points='16 33 27 44 48 21' fill='none' stroke='white' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/></svg>
@@ -28,14 +28,115 @@
   const givenUp = new Set();
 
   // --- what counts as a test file -------------------------------------------
+  // BEGIN-MATCHER — mark-test-files-viewed.test.js lifts this block verbatim and
+  // runs the real isTestFile against it, so keep it self-contained.
 
-  const TEST_PATTERNS = [
-    /(^|\/)(__tests__|__test__|tests?)\//i, // __tests__/, __test__/, test/, tests/
-    /\.test\./i, // Foo.test.tsx
-    /\.spec\./i, // login.spec.ts
+  // Extensions that hold executable code. Every rule below is anchored to one of
+  // these lists rather than matching a bare word, because the word "test" hides
+  // inside plenty of production names: Latest, Contest, Testosterone, and — in
+  // this backend — Template + Storage colliding into "templaTEStorage".
+  //
+  // Data and config formats are deliberately absent. The backend's
+  // `appsettings.Test.json` and the frontends' `env.Autotest.json` configure the
+  // deployed Autotest *environment*; they are not tests and must stay visible.
+  const CODE_EXT =
+    '(?:[cm]?[jt]sx?|py|rb|go|rs|java|kt|kts|cs|fs|vb|swift|m|mm|php|scala|groovy|dart|ex|exs|lua|pl|c|cc|cpp|h|hpp|vue|svelte)';
+
+  // Compiled-language extensions only. `FooTests.cs` is the xUnit/JUnit/XCTest
+  // convention, but in JS/TS the convention is `.test.`/`.spec.` and a
+  // `SomethingTests.tsx` is usually a screen — patient-mobile ships
+  // `DevTools/screens/ErrorBoundaryTests.tsx`, which is production code.
+  const CAMEL_EXT = '(?:cs|java|kt|kts|swift|m|mm|scala|groovy|vb|fs)';
+
+  // A directory that exists to hold tests. Matched per path segment, so anything
+  // nested underneath one counts too.
+  const TEST_DIR_PATTERNS = [
+    // Dunder convention: __tests__, __mocks__, __snapshots__, __fixtures__.
+    /^__(?:tests?|mocks?|snapshots?|fixtures?|stubs?)__$/i,
+
+    // Whole-segment names. `spec`/`specs` is deliberately NOT here: in these
+    // repos it means written specifications — backend/api-runbooks/specs/,
+    // infrastructure/specs/GRAFANA_SPEC.md — not RSpec.
+    /^(?:tests?|testing|e2e|cypress|playwright|mocks?|fixtures?|stubs?|test-?data)$/i,
+
+    // A test token at the END of a delimited segment — the .NET project naming
+    // this script kept missing (Pwrdby.QuickMD.Database.Tests), plus e2e-tests/,
+    // unit_test/. Anchoring at the end is what keeps a mid-segment token out:
+    // `.claude/skills/fe-pw-test-write/` is documentation about writing tests.
+    /[.\-_ ](?:tests?|specs?)$/i,
+
+    // Delimited test-support folders: test-utils/, spec_helpers/, test.data/.
+    // An allowlist rather than any `test-*`, because release-helper ships a
+    // `src/web/app/test-plans/` product feature that is not a test.
+    /^(?:test|spec)[.\-_](?:utils?|utilities|helpers?|support|common|data|fixtures?|doubles?|stubs?|setup|lib)$/i,
+
+    // CamelCase project suffix with no delimiter: QuickMDTests,
+    // Pwrdby.QuickMD.StartupTests, Foo.IntegrationTests. Case-sensitive, so the
+    // lowercase "test" inside Latest/Greatest/Contest cannot reach it.
+    /Tests?$/,
+
+    // CamelCase test-support projects. An allowlist rather than /^Test[A-Z]/,
+    // because the backend ships a production `Notifications/TestMessages/`
+    // folder that a blanket prefix rule would wrongly collapse.
+    /(?:^|\.)Test(?:Infrastructure|Utils|Utilities|Helpers|Support|Common|Fixtures|Doubles|Data|Kit|Base|Setup)$/,
   ];
 
-  const isTestFile = (path) => TEST_PATTERNS.some((re) => re.test(path));
+  // A file that is itself a test, judged on its basename alone.
+  const TEST_FILE_PATTERNS = [
+    // Dotted infix — the JS/TS world: Button.test.tsx, login.spec.ts,
+    // app.e2e-spec.ts, Button.cy.tsx, AvailabilityPopUp.inperson.test.tsx.
+    new RegExp(`\\.(?:tests?|specs?|e2e|e2e-spec|cy|integration|unit)\\.${CODE_EXT}$`, 'i'),
+
+    // Delimited suffix — Go, Ruby, Dart, Elixir: foo_test.go, user_spec.rb,
+    // widget_test.dart, thing-test.js.
+    new RegExp(`[-_](?:tests?|specs?)\\.${CODE_EXT}$`, 'i'),
+
+    // pytest / Go prefix. Lowercase and underscore only: `test-results.ts` is a
+    // plausible production name in a medical app and `TEST_thing.ts` is a
+    // devtools scratch file, but `test_results.py` is always pytest.
+    new RegExp(`^test_[^.]*\\.${CODE_EXT}$`),
+    /^conftest\.py$/i,
+
+    // The whole stem is the word: test.ts, tests.rb, spec.js.
+    new RegExp(`^(?:tests?|specs?)\\.${CODE_EXT}$`, 'i'),
+
+    // xUnit / JUnit / XCTest CamelCase: TreatmentCenterRepoTests.cs,
+    // AZendeskTicketHelperTest.cs, QuickMDTests.m, LoginSpec.kt.
+    // Case-sensitive for the same reason as the directory rule above.
+    new RegExp(`(?:Tests?|Specs?|TestCases?|TestSuite|TestFixture)\\.${CAMEL_EXT}$`),
+
+    // Maven Failsafe integration tests: OrderFlowIT.java.
+    /[a-z0-9]IT\.(?:java|kt)$/,
+
+    // Generated Jest/Vitest snapshots — output, never worth reading.
+    /\.snap$/i,
+
+    // Cucumber / Gherkin: the .feature file is the test.
+    /\.feature$/i,
+
+    // Runner bootstrap that only ever executes inside the test process.
+    // Runner *config* (vitest.config, playwright.config, jest.config) is left
+    // visible on purpose: it changes what runs, which deserves a look.
+    new RegExp(`^(?:jest|vitest|karma|mocha|ava|playwright|cypress)\\.setup\\.${CODE_EXT}$`, 'i'),
+    new RegExp(`^(?:setup-?tests?|tests?-?setup)\\.${CODE_EXT}$`, 'i'),
+  ];
+
+  const isTestFile = (rawPath) => {
+    // GitHub renders the full path in the header link, but strip a leading
+    // ellipsis anyway in case a future layout hands us a truncated one.
+    const segments = (rawPath || '')
+      .replace(/^…+/, '')
+      .split('/')
+      .filter(Boolean);
+    if (!segments.length) return false;
+    const name = segments.pop();
+    return (
+      segments.some((seg) => TEST_DIR_PATTERNS.some((re) => re.test(seg))) ||
+      TEST_FILE_PATTERNS.some((re) => re.test(name))
+    );
+  };
+
+  // END-MATCHER
 
   // --- reading GitHub's diff list -------------------------------------------
 

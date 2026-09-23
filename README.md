@@ -92,6 +92,8 @@ Turning it **off never un-views anything** — it just stops. Un-collapse a file
 
 The same button shows up on **compare** views (`/compare/…`) and **commit** pages (`/commit/…`, and a commit opened inside a PR). These have no per-file **Viewed** checkbox — that's a PR-only feature — so instead of marking a file viewed, the script **collapses it in place** by clicking the file header's chevron. Same button, same test-file rules, same scroll-stays-put behavior.
 
+**It collapses everything up front — you don't have to scroll a file into view first.** GitHub renders a big compare/commit diff in batches: on load only the first ~25 files actually exist in the page, and it injects the rest as you scroll down to them. So without help, a test file 100 files down isn't collapsed until you scroll to it, because until then it isn't even there. When you turn the button on, the script does a quick one-time **warm-up pass** — it scrolls the whole page end-to-end to force every file to load, snaps your scroll position back to where it was, and only then collapses the test files. The result: you land on the page and the test files are already gone, however far down they were. (The warm-up is classic-diff-only; a PR's Files changed tab loads its rows differently and doesn't need it.)
+
 One honest limitation: a compare/commit collapse is **client-side only**. There's nothing on GitHub's side to remember it, so a reload re-expands everything and the script re-collapses it — exactly as if you'd clicked the chevrons yourself. On a PR's Files changed tab it still marks **Viewed**, which persists as before.
 
 ### What counts as a test file

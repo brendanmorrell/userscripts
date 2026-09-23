@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Mark Test Files Viewed on GitHub PRs
 // @namespace    https://github.com/brendanmorrell/userscripts
-// @version      1.3.0
-// @description  One button that collapses every test file (and Storybook stories file) in a GitHub diff without moving your scroll position. On a PR's "Files changed" tab it marks each one Viewed; on compare and commit pages — which have no Viewed checkbox — it collapses them client-side instead. Knows the test conventions of JS/TS, .NET, Java, Go, Python, Ruby, Swift and Dart. Toggle it on and it keeps doing it on every diff you open.
+// @version      1.4.0
+// @description  One button that collapses every test file (and Storybook stories file) in a GitHub diff without moving your scroll position. On a PR's "Files changed" tab it marks each one Viewed; on compare and commit pages — which have no Viewed checkbox — it collapses them client-side instead. On those classic diffs it also warms up the whole page first, so every test file is collapsed up front and you never have to scroll a file into view to trigger it. Knows the test conventions of JS/TS, .NET, Java, Go, Python, Ruby, Swift and Dart. Toggle it on and it keeps doing it on every diff you open.
 // @author       brendanmorrell
 // @match        https://github.com/*/*/pull/*
 // @match        https://github.com/*/*/compare/*
@@ -391,6 +391,73 @@
     );
   }
 
+  // --- warm-up: force every deferred file into the DOM ----------------------
+  //
+  // A classic diff renders in progressive batches: on load only the first ~25
+  // `.file.js-file` nodes exist, and GitHub injects the rest as their spacers
+  // scroll into view. A file you haven't scrolled to isn't just collapsed — it
+  // isn't in the page yet, so the sweep can't touch it. That is the whole reason
+  // the old behaviour looked like "it only runs on the file I scroll to."
+  //
+  // This walks the document top-to-bottom in viewport steps so every batch mounts,
+  // then puts the scroll back. It runs once per page, before the sweep. Nothing is
+  // collapsed here — `running` is held true throughout, so the mutation-driven
+  // sweep stays parked while the page rearranges; the real sweep runs afterward
+  // with all files present. The PR "Files changed" tab is virtualized (it unmounts
+  // off-screen rows), so warming it up would be pointless and is skipped.
+  const warmedPages = new Set();
+
+  async function warmUp() {
+    const de = document.documentElement;
+    const startY = window.scrollY;
+    const step = Math.max(400, window.innerHeight - 120);
+    let y = 0;
+    let lastCount = -1;
+    let stable = 0;
+
+    // Cap the walk so a pathological page can't scroll forever; the stable-count
+    // break ends it as soon as no new files have mounted for a few steps.
+    for (let i = 0; i < 200; i++) {
+      window.scrollTo(0, y);
+      await sleep(90);
+
+      const count = classicFiles().length;
+      if (count === lastCount) stable++;
+      else {
+        stable = 0;
+        lastCount = count;
+      }
+
+      const bottom = de.scrollHeight - window.innerHeight;
+      if (y >= bottom && stable >= 2) break;
+      // Re-read scrollHeight every step: it grows as batches inject, so `y` keeps
+      // advancing into freshly revealed territory instead of stopping at the old end.
+      y = Math.min(y + step, de.scrollHeight);
+    }
+
+    window.scrollTo(0, startY);
+  }
+
+  // Single entry point for both the observer and the button: warm the page up
+  // (classic diffs only, once each) and then sweep.
+  async function activate() {
+    if (running) return;
+
+    if (isClassicDiffRoute() && !warmedPages.has(location.pathname)) {
+      warmedPages.add(location.pathname);
+      running = true;
+      render();
+      try {
+        await warmUp();
+      } finally {
+        running = false;
+        render();
+      }
+    }
+
+    await sweep();
+  }
+
   // --- button ---------------------------------------------------------------
 
   const ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`;
@@ -447,7 +514,7 @@
       GM_setValue(STORAGE_KEY, enabled);
       lastRenderKey = '';
       render();
-      if (enabled) sweep();
+      if (enabled) activate();
     });
     btn.addEventListener('mouseenter', () => {
       btn.style.transform = 'scale(1.1)';
@@ -515,7 +582,7 @@
     clearTimeout(timer);
     timer = setTimeout(() => {
       render();
-      if (enabled && !running && isDiffRoute()) sweep();
+      if (enabled && !running && isDiffRoute()) activate();
     }, 250);
   }
 

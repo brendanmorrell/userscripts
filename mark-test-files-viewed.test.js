@@ -203,12 +203,35 @@ test('accepts both the /files and /changes PR routes', () => {
   // GitHub renamed the Files-changed tab from /pull/N/files to /pull/N/changes and
   // still 301s the old path, so the route check has to accept both. Getting this
   // wrong is silent — the button simply never renders.
-  const match = SOURCE.match(/const isFilesRoute = \(\) => (\/.*?\/)\.test\(location\.pathname\);/);
-  assert.ok(match, 'could not find isFilesRoute in the userscript source');
+  const match = SOURCE.match(/const isPrFilesRoute = \(\) => (\/.*?\/)\.test\(location\.pathname\);/);
+  assert.ok(match, 'could not find isPrFilesRoute in the userscript source');
   const route = vm.runInThisContext(match[1]);
 
   assert.equal(route.test('/QuickMD-LLC/provider/pull/364/files'), true);
   assert.equal(route.test('/QuickMD-LLC/provider/pull/364/changes'), true);
   assert.equal(route.test('/QuickMD-LLC/provider/pull/364'), false);
   assert.equal(route.test('/QuickMD-LLC/provider/pull/364/commits'), false);
+  // A compare page must NOT match the PR route — it collapses via the other adapter.
+  assert.equal(route.test('/QuickMD-LLC/patient-web/compare/00e52b869...def9ed746'), false);
+});
+
+test('recognises compare and commit pages as classic-diff routes', () => {
+  // Compare views, standalone commits, and a commit opened inside a PR all use the
+  // classic server-rendered diff — no Viewed checkbox — so the button has to appear
+  // and collapse client-side there too. These are the routes that opt them in.
+  const body = SOURCE.match(/const isClassicDiffRoute = \(\) => \{([\s\S]*?)\n  \};/);
+  assert.ok(body, 'could not find isClassicDiffRoute in the userscript source');
+  const isClassicDiffRoute = new Function('pathname', `const location = { pathname };${body[1]}`);
+
+  // Opts in
+  assert.equal(isClassicDiffRoute('/QuickMD-LLC/patient-web/compare/00e52b869...def9ed746'), true);
+  assert.equal(isClassicDiffRoute('/QuickMD-LLC/patient-web/compare/main...feature'), true);
+  assert.equal(isClassicDiffRoute('/QuickMD-LLC/provider/commit/def9ed7461234567890abcdef1234567890abcde'), true);
+  assert.equal(isClassicDiffRoute('/QuickMD-LLC/provider/commit/def9ed7'), true);
+  assert.equal(isClassicDiffRoute('/QuickMD-LLC/provider/pull/364/commits/def9ed7461234567890abcd'), true);
+
+  // Stays out
+  assert.equal(isClassicDiffRoute('/QuickMD-LLC/provider/pull/364/files'), false);
+  assert.equal(isClassicDiffRoute('/QuickMD-LLC/provider/pull/364'), false);
+  assert.equal(isClassicDiffRoute('/QuickMD-LLC/provider/tree/main'), false);
 });

@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Mark Test Files Viewed on GitHub PRs
 // @namespace    https://github.com/brendanmorrell/userscripts
-// @version      1.2.0
-// @description  One button on a PR's "Files changed" tab that marks every test file (and Storybook stories file) as viewed (collapsing it) without moving your scroll position. Knows the test conventions of JS/TS, .NET, Java, Go, Python, Ruby, Swift and Dart. Toggle it on and it keeps doing it on every PR you open.
+// @version      1.3.0
+// @description  One button that collapses every test file (and Storybook stories file) in a GitHub diff without moving your scroll position. On a PR's "Files changed" tab it marks each one Viewed; on compare and commit pages — which have no Viewed checkbox — it collapses them client-side instead. Knows the test conventions of JS/TS, .NET, Java, Go, Python, Ruby, Swift and Dart. Toggle it on and it keeps doing it on every diff you open.
 // @author       brendanmorrell
 // @match        https://github.com/*/*/pull/*
+// @match        https://github.com/*/*/compare/*
+// @match        https://github.com/*/*/commit/*
 // @icon         data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='32' fill='%231f883d'/><polyline points='16 33 27 44 48 21' fill='none' stroke='white' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/></svg>
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -18,12 +20,12 @@
   const STORAGE_KEY = 'mark_test_files_viewed_enabled';
   const BTN_ID = 'mark-test-files-viewed-btn';
 
-  // One switch, not two. On = sweep now and on every PR files page from here on.
-  // Off = stop sweeping. Turning it off never un-views anything.
+  // One switch, not two. On = sweep now and on every diff page from here on.
+  // Off = stop sweeping. Turning it off never re-expands anything.
   let enabled = GM_getValue(STORAGE_KEY, false);
   let running = false;
 
-  // Files whose click refused to stick twice in a row, keyed by "<pathname>::<file>".
+  // Files whose collapse refused to stick twice in a row, keyed by "<pathname>::<file>".
   // Without this, the observer would re-trigger a sweep on the same stuck file forever.
   const givenUp = new Set();
 
@@ -144,12 +146,50 @@
 
   // END-MATCHER
 
-  // --- reading GitHub's diff list -------------------------------------------
+  // GitHub wraps file paths in LTR/RTL marks so they render correctly in RTL locales.
+  // Escaped rather than literal — they are invisible and would not survive an edit.
+  const clean = (s) => (s || '').replace(/[‎‏]/g, '').trim();
 
-  // The "Files changed" tab is React, and its CSS-module class names carry a
-  // hash that rotates on every GitHub deploy (MarkAsViewedButton-module__viewed__k8dzo).
-  // So identify the viewed toggle by ARIA, which is stable, and keep the class
-  // selector only as a fallback in case the ARIA labels are the thing that changes.
+  // --- page adapters --------------------------------------------------------
+  //
+  // Two kinds of GitHub diff page need collapsing, and they collapse a file in
+  // completely different ways, so each is its own adapter. Both expose the same
+  // shape — list(), collapse(file) — and everything below is written against it.
+  //
+  //   • A PR's "Files changed" tab is React with a per-file **Viewed** checkbox.
+  //     Marking a file viewed collapses it AND persists on GitHub's side, so
+  //     "collapse" there means "click Viewed".
+  //   • A compare or commit page uses the classic server-rendered diff. There is
+  //     no Viewed checkbox, so a file can only be collapsed client-side by
+  //     clicking the chevron in its header. Nothing persists — reload and it's
+  //     back — which is the inherent limit the button's tooltip is honest about.
+  //
+  // Each list() entry is { path, header, collapsed }. `header` is the element the
+  // scroll anchor pins to: it must survive the collapse (only the diff body goes
+  // away), which the file-header does in both layouts.
+
+  // A PR files/changes route. GitHub renamed the route from /files to /changes and
+  // still redirects the old one, so accept both rather than betting on which is live.
+  const isPrFilesRoute = () => /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)\b/.test(location.pathname);
+
+  // A classic server-rendered diff: a compare view, a standalone commit, or an
+  // individual commit opened inside a PR. None of these carry a Viewed checkbox.
+  const isClassicDiffRoute = () => {
+    const p = location.pathname;
+    return (
+      /^\/[^/]+\/[^/]+\/compare\//.test(p) ||
+      /^\/[^/]+\/[^/]+\/commit\/[0-9a-f]{7,40}\b/.test(p) ||
+      /^\/[^/]+\/[^/]+\/pull\/\d+\/commits\/[0-9a-f]{7,40}\b/.test(p)
+    );
+  };
+
+  const isDiffRoute = () => isPrFilesRoute() || isClassicDiffRoute();
+
+  // ---- adapter: PR "Files changed" (React, Viewed checkbox) ----
+
+  // The Viewed toggle's CSS-module class name carries a hash that rotates on every
+  // GitHub deploy (MarkAsViewedButton-module__viewed__k8dzo), so identify it by
+  // ARIA, which is stable, and keep the class selector only as a fallback.
   const VIEWED_LABEL = /^(not\s+)?viewed$/i;
 
   function viewedButtons() {
@@ -160,15 +200,11 @@
     return [...document.querySelectorAll('button[class*="MarkAsViewedButton-module"]')];
   }
 
-  // GitHub wraps file paths in LTR/RTL marks so they render correctly in RTL locales.
-  // Escaped rather than literal — they are invisible and would not survive an edit.
-  const clean = (s) => (s || '').replace(/[\u200e\u200f]/g, '').trim();
-
   // Walk up from a viewed toggle to the file header that owns it — the nearest
   // ancestor that also holds the "#diff-<sha>" filename link. That header element
   // survives the collapse (only the diff body goes away), which is what makes it
   // usable as a scroll anchor.
-  function headerFor(btn) {
+  function headerForViewed(btn) {
     let node = btn.parentElement;
     for (let i = 0; i < 12 && node && node !== document.body; i++) {
       const link = node.querySelector('a[href^="#diff-"]');
@@ -178,30 +214,88 @@
     return null;
   }
 
-  function files() {
-    const out = [];
-    for (const btn of viewedButtons()) {
-      const found = headerFor(btn);
-      if (!found || !found.path) continue;
-      out.push({
-        path: found.path,
-        header: found.header,
-        btn,
-        viewed: btn.getAttribute('aria-pressed') === 'true',
-      });
-    }
-    return out;
+  const prAdapter = {
+    // Collapsing here also marks the file Viewed on GitHub's side, so it persists.
+    persists: true,
+    list() {
+      const out = [];
+      for (const btn of viewedButtons()) {
+        const found = headerForViewed(btn);
+        if (!found || !found.path) continue;
+        out.push({
+          path: found.path,
+          header: found.header,
+          collapsed: btn.getAttribute('aria-pressed') === 'true',
+          _btn: btn,
+        });
+      }
+      return out;
+    },
+    collapse(file) {
+      file._btn.click();
+    },
+  };
+
+  // ---- adapter: classic diff (compare / commit, no Viewed checkbox) ----
+  //
+  // Each file is `<div class="file js-file js-details-container Details ...">`.
+  // Expanded ⇔ the element carries the `open` class, which tracks 1:1 with the
+  // header chevron's aria-expanded (verified live). Clicking the header's
+  // `.js-details-target` toggles it. Only the header's own target is touched —
+  // some files nest a second `.js-details-target` in the body (a "Load diff"
+  // control), so the query is scoped to the header, never the whole file.
+
+  function classicFiles() {
+    return [...document.querySelectorAll('.file.js-file')];
+  }
+
+  function classicHeader(file) {
+    return file.querySelector('.js-file-header') || file.querySelector('.file-header');
+  }
+
+  const classicAdapter = {
+    // Client-side only — nothing is written back to GitHub. Reload re-expands.
+    persists: false,
+    list() {
+      const out = [];
+      for (const file of classicFiles()) {
+        const header = classicHeader(file);
+        const path = header && clean(header.getAttribute('data-path'));
+        if (!header || !path) continue;
+        out.push({
+          path,
+          header,
+          collapsed: !file.classList.contains('open'),
+          _file: file,
+        });
+      }
+      return out;
+    },
+    collapse(file) {
+      // Toggling only ever collapses here: the sweep hands us expanded files, and
+      // a defensive re-check keeps a double-fire from re-expanding one.
+      if (!file._file.classList.contains('open')) return;
+      const target = classicHeader(file._file).querySelector('button.js-details-target');
+      if (target) target.click();
+    },
+  };
+
+  const adapter = () => (isPrFilesRoute() ? prAdapter : isClassicDiffRoute() ? classicAdapter : null);
+
+  // --- reading GitHub's diff list -------------------------------------------
+
+  function listFiles() {
+    const a = adapter();
+    return a ? a.list() : [];
   }
 
   const scopeKey = (path) => `${location.pathname}::${path}`;
 
   function pending() {
-    return files().filter((f) => isTestFile(f.path) && !f.viewed && !givenUp.has(scopeKey(f.path)));
+    return listFiles().filter(
+      (f) => isTestFile(f.path) && !f.collapsed && !givenUp.has(scopeKey(f.path)),
+    );
   }
-
-  // GitHub renamed this tab's route from /files to /changes and still redirects the
-  // old one, so accept both rather than betting on which is live.
-  const isFilesRoute = () => /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)\b/.test(location.pathname);
 
   // --- holding scroll still -------------------------------------------------
 
@@ -209,7 +303,7 @@
   // document by 1210px while the browser moved scrollY by 3531px. The two are
   // unrelated, so pin a real element instead and let scrollY land where it must.
   function pickAnchor(targetPaths) {
-    const all = files();
+    const all = listFiles();
     const safe = all.filter((f) => !targetPaths.has(f.path));
     // Topmost file that is not about to collapse and is not already scrolled past.
     const visible = safe.find((f) => f.header.getBoundingClientRect().bottom > 0);
@@ -218,7 +312,7 @@
   }
 
   function headerTop(path) {
-    const f = files().find((x) => x.path === path);
+    const f = listFiles().find((x) => x.path === path);
     return f ? f.header.getBoundingClientRect().top : null;
   }
 
@@ -235,15 +329,15 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // React swaps the button node out on every mutation, so re-query by path rather
-  // than holding a reference — a stale node's aria-pressed never updates.
-  async function confirmViewed(path, timeoutMs = 2500) {
+  // React (and the classic Details toggle) swap or re-render the node, so re-query
+  // by path rather than holding a reference — a stale node's state never updates.
+  async function confirmCollapsed(path, timeoutMs = 2500) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       await sleep(100);
-      const f = files().find((x) => x.path === path);
+      const f = listFiles().find((x) => x.path === path);
       if (!f) return true; // entry left the DOM (filtered, paginated) — nothing left to do
-      if (f.viewed) return true;
+      if (f.collapsed) return true;
     }
     return false;
   }
@@ -263,15 +357,15 @@
     let marked = 0;
 
     try {
-      // Strictly one at a time. Clicking every button in a single tick loses most
-      // of the mutations — React re-renders the list between clicks and the queued
-      // nodes are detached by the time the event reaches them.
+      // Strictly one at a time. Collapsing every file in a single tick loses most
+      // of the mutations — the list re-renders between clicks and the queued nodes
+      // are detached by the time the event reaches them.
       for (let guard = 0; guard < 500; guard++) {
         const next = pending()[0];
         if (!next) break;
 
-        next.btn.click();
-        const ok = await confirmViewed(next.path);
+        adapter().collapse(next);
+        const ok = await confirmCollapsed(next.path);
 
         if (ok) {
           marked++;
@@ -292,7 +386,7 @@
 
     const stuck = [...attempts.keys()].filter((p) => givenUp.has(scopeKey(p)));
     console.info(
-      `[mark-test-files-viewed] marked ${marked}/${initial.length} test file(s) as viewed` +
+      `[mark-test-files-viewed] collapsed ${marked}/${initial.length} test file(s)` +
         (stuck.length ? ` — gave up on: ${stuck.join(', ')}` : ''),
     );
   }
@@ -365,8 +459,15 @@
     document.body.appendChild(btn);
   }
 
+  // "mark viewed" on a PR, plain "collapse" where nothing persists — so the
+  // tooltip never promises a Viewed state the page can't actually hold.
+  function verb() {
+    const a = adapter();
+    return a && a.persists ? 'marking test files as viewed' : 'collapsing test files';
+  }
+
   function render() {
-    if (!isFilesRoute()) {
+    if (!isDiffRoute()) {
       if (btn) {
         btn.remove();
         btn = null;
@@ -376,10 +477,16 @@
       return;
     }
 
-    if (!btn) createButton();
+    // Recreate when the node is gone OR has been detached — GitHub's Turbo
+    // navigation on compare/commit pages can rip a body-level node out from under
+    // us, and a stale `btn` reference is not null, so `!btn` alone misses that.
+    if (!btn || !document.body.contains(btn)) {
+      createButton();
+      lastRenderKey = '';
+    }
 
     const count = pending().length;
-    const key = `${enabled}|${count}|${running}`;
+    const key = `${enabled}|${count}|${running}|${adapter() === classicAdapter}`;
     if (key === lastRenderKey) return; // keep our own writes from re-triggering the observer
     lastRenderKey = key;
 
@@ -390,24 +497,25 @@
     badge.textContent = count > 0 ? String(count) : '';
     badge.style.display = count > 0 && !running ? 'block' : 'none';
 
+    const action = verb();
     btn.title = running
-      ? 'Marking test files as viewed…'
+      ? `${action[0].toUpperCase() + action.slice(1)}…`
       : enabled
-        ? `Auto-marking test files as viewed is ON${count ? ` — ${count} left to mark` : ''}. Click to turn off.`
-        : `Auto-marking test files as viewed is OFF${count ? ` — ${count} unviewed test file(s)` : ''}. Click to turn on and mark them now.`;
+        ? `Auto-${action} is ON${count ? ` — ${count} left` : ''}. Click to turn off.`
+        : `Auto-${action} is OFF${count ? ` — ${count} unviewed test file(s)` : ''}. Click to turn on and do it now.`;
   }
 
   // --- lifecycle ------------------------------------------------------------
 
-  // GitHub soft-navigates between the Conversation and Files tabs, so Tampermonkey
-  // only ever runs this once. A debounced observer covers route changes, the diff
-  // list mounting, and lazily loaded file chunks arriving later.
+  // GitHub soft-navigates between tabs, so Tampermonkey only ever runs this once.
+  // A debounced observer covers route changes, the diff list mounting, and lazily
+  // loaded file chunks arriving later.
   let timer = null;
   function schedule() {
     clearTimeout(timer);
     timer = setTimeout(() => {
       render();
-      if (enabled && !running && isFilesRoute()) sweep();
+      if (enabled && !running && isDiffRoute()) sweep();
     }, 250);
   }
 

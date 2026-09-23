@@ -4,7 +4,7 @@ Small browser scripts that remove busywork from reviewing pull requests on GitHu
 
 | Script | What it does |
 | --- | --- |
-| **[Mark Test Files Viewed](#mark-test-files-viewed)** | Collapses every test file and Storybook stories file in a PR's diff automatically, so you only scroll through the code you actually need to read. |
+| **[Mark Test Files Viewed](#mark-test-files-viewed)** | Collapses every test file and Storybook stories file in any GitHub diff automatically — a PR's Files changed tab, and now compare and commit pages too — so you only scroll through the code you actually need to read. |
 | **[Hide Copilot Comments](#hide-copilot-comments)** | Hides Copilot's bot review comments so human comments are all that's left. |
 | **[Hide Whitespace in Diffs by Default](#hide-whitespace-in-diffs-by-default)** | Opens every PR diff, commit, and compare view with whitespace changes already hidden, so you never click the gear again. |
 
@@ -67,7 +67,7 @@ Tampermonkey didn't intercept the link. Install it by hand instead:
 
 Open any PR and click its **Files changed** tab. A round grey button appears in the bottom-right corner of the page. Grey means off. **Click it** — it turns green and immediately collapses the test files in that PR.
 
-That's the only click you'll ever make. It stays on across PRs, tabs, and browser restarts.
+That's the only click you'll ever make. It stays on across PRs, tabs, and browser restarts — and it does the same thing on **compare** and **commit** pages ([see below](#compare-and-commit-pages)).
 
 ---
 
@@ -82,9 +82,17 @@ The button in the bottom-right corner is the whole interface:
 | **Red number badge** | How many test files are still expanded. |
 | **Dimmed** | Working right now. |
 
-Hover it for the same information in words. It only appears on the **Files changed** tab, since that's the only place it has anything to do.
+Hover it for the same information in words. It appears on any GitHub diff — a PR's **Files changed** tab, a **compare** view, or a **commit** page — and nowhere else, since those are the only places it has anything to do.
 
-Turning it **off never un-views anything** — it just stops. Un-collapse a file the normal way, by unchecking GitHub's own **Viewed** box on it.
+Turning it **off never un-views anything** — it just stops. Un-collapse a file the normal way, by unchecking GitHub's own **Viewed** box on it (or clicking its header chevron on a compare/commit page).
+
+<a id="compare-and-commit-pages"></a>
+
+### Compare and commit pages
+
+The same button shows up on **compare** views (`/compare/…`) and **commit** pages (`/commit/…`, and a commit opened inside a PR). These have no per-file **Viewed** checkbox — that's a PR-only feature — so instead of marking a file viewed, the script **collapses it in place** by clicking the file header's chevron. Same button, same test-file rules, same scroll-stays-put behavior.
+
+One honest limitation: a compare/commit collapse is **client-side only**. There's nothing on GitHub's side to remember it, so a reload re-expands everything and the script re-collapses it — exactly as if you'd clicked the chevrons yourself. On a PR's Files changed tab it still marks **Viewed**, which persists as before.
 
 ### What counts as a test file
 

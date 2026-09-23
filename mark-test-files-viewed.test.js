@@ -87,6 +87,15 @@ const SHOULD_MATCH = [
   'jest.setup.js',
   'vitest.setup.tsx',
   'src/setupTests.ts',
+
+  // --- Storybook stories -----------------------------------------------------
+  'src/components/Button.stories.tsx',
+  'src/components/Button.stories.ts',
+  'src/components/Button.stories.js',
+  'src/components/Button.stories.jsx',
+  'src/components/Button.stories.mdx', // MDX docs are stories too
+  'src/components/Legacy.story.tsx', // older singular convention
+  'SRC/COMPONENTS/BUTTON.STORIES.TSX', // case-insensitive
 ];
 
 const SHOULD_NOT_MATCH = [
@@ -101,6 +110,8 @@ const SHOULD_NOT_MATCH = [
   // Every one of these is a real path from the QuickMD repos.
   'src/latest/index.ts',
   'src/contest.ts',
+  'src/data/stories.ts', // a "stories" data file, not a .stories. story
+  'src/features/stories/Feed.tsx', // a product "Stories" feature, not Storybook
   'docs/protest-banner.png',
   'src/changelist/Changelist-LATEST.json', // LATEST ends in "test"
   'Libraries/Domain/Pwrdby.QuickMD.Storages/IntakeForms/Storages/IntakeFormTemplateStorage.cs', // "templaTEStorage"

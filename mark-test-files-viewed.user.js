@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Mark Test Files Viewed on GitHub PRs
 // @namespace    https://github.com/brendanmorrell/userscripts
-// @version      1.1.0
-// @description  One button on a PR's "Files changed" tab that marks every test file as viewed (collapsing it) without moving your scroll position. Knows the test conventions of JS/TS, .NET, Java, Go, Python, Ruby, Swift and Dart. Toggle it on and it keeps doing it on every PR you open.
+// @version      1.2.0
+// @description  One button on a PR's "Files changed" tab that marks every test file (and Storybook stories file) as viewed (collapsing it) without moving your scroll position. Knows the test conventions of JS/TS, .NET, Java, Go, Python, Ruby, Swift and Dart. Toggle it on and it keeps doing it on every PR you open.
 // @author       brendanmorrell
 // @match        https://github.com/*/*/pull/*
 // @icon         data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='32' fill='%231f883d'/><polyline points='16 33 27 44 48 21' fill='none' stroke='white' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/></svg>
@@ -107,6 +107,12 @@
 
     // Maven Failsafe integration tests: OrderFlowIT.java.
     /[a-z0-9]IT\.(?:java|kt)$/,
+
+    // Storybook stories — CSF (Button.stories.tsx) and MDX docs
+    // (Card.stories.mdx), plus the older singular Button.story.tsx. A story is a
+    // manual/visual artifact, not a diff you read line-by-line. `mdx` is spelled
+    // out because it is not one of the executable CODE_EXT.
+    new RegExp(`\\.stor(?:ies|y)\\.(?:${CODE_EXT}|mdx)$`, 'i'),
 
     // Generated Jest/Vitest snapshots — output, never worth reading.
     /\.snap$/i,

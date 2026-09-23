@@ -4,8 +4,9 @@ Small browser scripts that remove busywork from reviewing pull requests on GitHu
 
 | Script | What it does |
 | --- | --- |
-| **[Mark Test Files Viewed](#mark-test-files-viewed)** | Collapses every test file in a PR's diff automatically, so you only scroll through the code you actually need to read. |
+| **[Mark Test Files Viewed](#mark-test-files-viewed)** | Collapses every test file and Storybook stories file in a PR's diff automatically, so you only scroll through the code you actually need to read. |
 | **[Hide Copilot Comments](#hide-copilot-comments)** | Hides Copilot's bot review comments so human comments are all that's left. |
+| **[Hide Whitespace in Diffs by Default](#hide-whitespace-in-diffs-by-default)** | Opens every PR diff, commit, and compare view with whitespace changes already hidden, so you never click the gear again. |
 
 ---
 
@@ -13,7 +14,7 @@ Small browser scripts that remove busywork from reviewing pull requests on GitHu
 
 Open a PR with 40 changed files, 22 of them `.test.ts`, and the diff you care about is buried. GitHub has a per-file **Viewed** checkbox that collapses a file, but you have to click all 22 by hand, on every PR.
 
-This script does it for you. Turn it on once and every PR you open from then on has its test files already collapsed — `__tests__/` directories, `*.test.*`, `*.spec.*`, .NET `*.Tests/` projects, `*_test.go`, `test_*.py`, and the rest of the conventions listed [below](#what-counts-as-a-test-file). Your scroll position doesn't move while it works, and nothing is hidden: a collapsed file is still one click away, and it's marked viewed on GitHub's side, exactly as if you'd clicked it yourself.
+This script does it for you. Turn it on once and every PR you open from then on has its test files already collapsed — `__tests__/` directories, `*.test.*`, `*.spec.*`, .NET `*.Tests/` projects, `*_test.go`, `test_*.py`, Storybook `*.stories.*` / `*.story.*` files, and the rest of the conventions listed [below](#what-counts-as-a-test-file). Your scroll position doesn't move while it works, and nothing is hidden: a collapsed file is still one click away, and it's marked viewed on GitHub's side, exactly as if you'd clicked it yourself.
 
 **[▶ Click here to install](https://raw.githubusercontent.com/brendanmorrell/userscripts/main/mark-test-files-viewed.user.js)** — but do the two setup steps below first, or that link will just show you a wall of code.
 
@@ -150,6 +151,14 @@ Tampermonkey re-checks this repo on its own schedule and pulls new versions auto
 ## Hide Copilot Comments
 
 Also in this repo: [`hide-copilot-comments.user.js`](hide-copilot-comments.user.js). Same setup, same install flow — click [install](https://raw.githubusercontent.com/brendanmorrell/userscripts/main/hide-copilot-comments.user.js) once Tampermonkey is set up. Adds a purple toggle in the bottom-right of any PR that hides Copilot's review comments. On by default, and it auto-updates from this repo the same way.
+
+---
+
+## Hide Whitespace in Diffs by Default
+
+Also in this repo: [`hide-whitespace-diffs.user.js`](hide-whitespace-diffs.user.js). GitHub only remembers **Hide whitespace changes** on the *one* PR you toggled it on — every new PR opens with whitespace back, so you re-click the gear every time. This flips the default: every PR **Files** tab, commit, and compare view opens with `?w=1` already applied. Click [install](https://raw.githubusercontent.com/brendanmorrell/userscripts/main/hide-whitespace-diffs.user.js) once Tampermonkey is set up — no button, no config, it just works and auto-updates.
+
+It only acts when *you* haven't chosen: if you open the gear and click **Show whitespace** on a page (which sets `?w=0`), the script leaves that page alone. A fresh PR carries no `w` at all, so it defaults to hidden again. Note GitHub's one caveat — while whitespace is hidden you can't leave inline comments on the collapsed lines; click **Show whitespace** on that page when you need to.
 
 ---
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Hide GitHub Copilot Comments
 // @namespace    https://github.com/brendanmorrell/userscripts
-// @version      2.0.1
+// @version      2.1.0
 // @description  Hides GitHub Copilot bot review comments on PRs. Purple button (bottom-right) to toggle.
 // @author       brendanmorrell
 // @match        https://github.com/*/*/pull/*
@@ -24,6 +24,8 @@
   styleEl.id = 'copilot-hider-style';
 
   const HIDE_CSS = `
+    /* React timeline (2026 redesign): ConnectedItem wrappers carry data-testid="timeline-item" */
+    [data-testid="timeline-item"]:has(a[data-hovercard-type="copilot"]),
     .TimelineItem:has(a[data-hovercard-type="copilot"]),
     .js-timeline-item:has(a[data-hovercard-type="copilot"]),
     .js-comment-container:has(a[data-hovercard-type="copilot"]),
